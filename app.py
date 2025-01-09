@@ -4,9 +4,10 @@ import io
 import chess
 import chess.pgn
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QGridLayout, QPushButton, QLabel, QWidget, QTextEdit, QVBoxLayout, QHBoxLayout
+    QApplication, QMainWindow, QGridLayout, QPushButton, QLabel, QWidget, QTextEdit, 
+    QVBoxLayout, QHBoxLayout, QMessageBox
 )
-from PyQt5.QtGui import QPixmap, QPainter, QBrush
+from PyQt5.QtGui import QPixmap, QPainter, QBrush, QFont
 from PyQt5.QtCore import Qt, QSize
 
 
@@ -14,7 +15,7 @@ class ChessBoardGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Chess PGN Viewer")
-        self.setGeometry(100, 100, 800, 600)  # Increased width for sidebar
+        self.setGeometry(100, 100, 800, 600)
 
         # Load chess assets
         self.assets_path = "assets"
@@ -26,14 +27,71 @@ class ChessBoardGUI(QMainWindow):
         self.white_rating = ""
         self.black_rating = ""
         self.termination = ""
-        self.is_flipped = False  # Track board orientation
+        self.is_flipped = False
 
         self.init_ui()
 
+    def show_popup(self, title, message, icon_type):
+        msg = QMessageBox()
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setIcon(icon_type)
+        msg.exec_()
+
+    def load_pgn(self, pgn_data):
+        try:
+            # Check if input is empty
+            pgn_text = pgn_data.read()
+            if not pgn_text.strip():
+                self.show_popup("Error", "You must input PGN data!", QMessageBox.Warning)
+                return False
+
+            # Reset the stream for reading
+            pgn_data = io.StringIO(pgn_text)
+            game = chess.pgn.read_game(pgn_data)
+            
+            # Check if the input is valid PGN format
+            if game is None:
+                self.show_popup("Error", "You must input PGN format data!", QMessageBox.Critical)
+                return False
+
+            self.moves = list(game.mainline_moves())
+            self.board.reset()
+            self.current_move_index = -1
+
+            # Update game info
+            self.white_player = game.headers.get("White", "Unknown")
+            self.black_player = game.headers.get("Black", "Unknown")
+            self.white_rating = game.headers.get("WhiteElo", "Unknown")
+            self.black_rating = game.headers.get("BlackElo", "Unknown")
+            self.termination = game.headers.get("Termination", "Unknown")
+
+            self.white_label.setText(f"White: {self.white_player}")
+            self.black_label.setText(f"Black: {self.black_player}")
+            self.white_rating_label.setText(f"White Rating: {self.white_rating}")
+            self.black_rating_label.setText(f"Black Rating: {self.black_rating}")
+            self.termination_label.setText(f"Termination: {self.termination}")
+
+            self.chessboard_widget.update_board()
+            
+            # Show success message
+            self.show_popup("Success", "Game loaded successfully!", QMessageBox.Information)
+            return True
+
+        except Exception as e:
+            self.show_popup("Error", "You must input PGN format data!", QMessageBox.Critical)
+            return False
+
+    def load_pgn_from_textbox(self):
+        pgn_text = self.pgn_input.toPlainText()
+        pgn_stream = io.StringIO(pgn_text)
+        self.load_pgn(pgn_stream)
+
+    # ... rest of the ChessBoardGUI class remains the same ...
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        self.layout = QHBoxLayout(self.central_widget)  # Horizontal layout for board and sidebar
+        self.layout = QHBoxLayout(self.central_widget)
 
         # Chessboard and info layout
         board_layout = QGridLayout()
@@ -65,7 +123,7 @@ class ChessBoardGUI(QMainWindow):
         self.next_button.clicked.connect(self.show_next_move)
         board_layout.addWidget(self.next_button, 4, 2, 1, 2)
 
-        self.flip_button = QPushButton("Flip Board")  # Add flip button
+        self.flip_button = QPushButton("Flip Board")
         self.flip_button.clicked.connect(self.flip_board)
         board_layout.addWidget(self.flip_button, 4, 4, 1, 4)
 
@@ -81,38 +139,6 @@ class ChessBoardGUI(QMainWindow):
         self.load_button.clicked.connect(self.load_pgn_from_textbox)
         self.sidebar_layout.addWidget(self.load_button)
 
-    def load_pgn(self, pgn_data):
-        try:
-            game = chess.pgn.read_game(pgn_data)
-            if game is None:
-                raise ValueError("Invalid PGN data")
-
-            self.moves = list(game.mainline_moves())
-            self.board.reset()
-            self.current_move_index = -1
-
-            # Update game info
-            self.white_player = game.headers.get("White", "Unknown")
-            self.black_player = game.headers.get("Black", "Unknown")
-            self.white_rating = game.headers.get("WhiteElo", "Unknown")
-            self.black_rating = game.headers.get("BlackElo", "Unknown")
-            self.termination = game.headers.get("Termination", "Unknown")
-
-            self.white_label.setText(f"White: {self.white_player}")
-            self.black_label.setText(f"Black: {self.black_player}")
-            self.white_rating_label.setText(f"White Rating: {self.white_rating}")
-            self.black_rating_label.setText(f"Black Rating: {self.black_rating}")
-            self.termination_label.setText(f"Termination: {self.termination}")
-
-            self.chessboard_widget.update_board()
-        except Exception as e:
-            self.pgn_input.setPlainText(f"Error loading PGN: {e}")
-
-    def load_pgn_from_textbox(self):
-        pgn_text = self.pgn_input.toPlainText()
-        pgn_stream = io.StringIO(pgn_text)
-        self.load_pgn(pgn_stream)
-
     def show_next_move(self):
         if self.current_move_index < len(self.moves) - 1:
             self.current_move_index += 1
@@ -126,17 +152,22 @@ class ChessBoardGUI(QMainWindow):
             self.chessboard_widget.update_board()
 
     def flip_board(self):
-        self.is_flipped = not self.is_flipped  # Toggle board orientation
+        self.is_flipped = not self.is_flipped
         self.chessboard_widget.update_board()
 
 
+# ... ChessBoardWidget class remains exactly the same ...
 class ChessBoardWidget(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
+        self.MARGIN_TOP = 30
+        self.MARGIN_BOTTOM = 30
+        self.MARGIN_LEFT = 30
+        self.MARGIN_RIGHT = 30
 
     def sizeHint(self):
-        return QSize(600, 600)  # Ensure the widget size does not exceed 600x600
+        return QSize(600, 600)
 
     def paintEvent(self, event):
         qp = QPainter()
@@ -146,13 +177,15 @@ class ChessBoardWidget(QWidget):
 
     def draw_board(self, qp):
         size = self.size()
-        square_size = min(size.width(), size.height()) // 8
+        board_width = size.width() - self.MARGIN_LEFT - self.MARGIN_RIGHT
+        board_height = size.height() - self.MARGIN_TOP - self.MARGIN_BOTTOM
+        square_size = min(board_width, board_height) // 8
 
-        # Calculate offsets to center the board
         board_size = square_size * 8
-        x_offset = (size.width() - board_size) // 2
-        y_offset = (size.height() - board_size) // 2
+        x_offset = self.MARGIN_LEFT + (board_width - board_size) // 2
+        y_offset = self.MARGIN_TOP + (board_height - board_size) // 2
 
+        # Draw the chessboard squares
         for row in range(8):
             for col in range(8):
                 color = Qt.lightGray if (row + col) % 2 == 0 else Qt.gray
@@ -164,13 +197,12 @@ class ChessBoardWidget(QWidget):
                     square_size
                 )
 
-                display_row = 7 - row if self.parent.is_flipped else row  # Flip rows if needed
-                display_col = 7 - col if self.parent.is_flipped else col  # Flip columns if needed
+                display_row = 7 - row if self.parent.is_flipped else row
+                display_col = 7 - col if self.parent.is_flipped else col
                 square = chess.square(display_col, 7 - display_row)
                 piece = self.parent.board.piece_at(square)
                 if piece:
-                    # Correct color assignment
-                    piece_color = "l" if piece.color == chess.WHITE else "d"  # Fix color assignment
+                    piece_color = "l" if piece.color == chess.WHITE else "d"
                     piece_type = chess.PIECE_SYMBOLS[piece.piece_type]
                     piece_name = f"Chess_{piece_type}{piece_color}t60.png"
                     piece_path = os.path.join(self.parent.assets_path, piece_name)
@@ -181,9 +213,42 @@ class ChessBoardWidget(QWidget):
                         pixmap
                     )
 
-    def update_board(self):
-            self.update()
+        # Draw column and row notations
+        font = QFont()
+        font.setPointSize(12)
+        qp.setFont(font)
+        qp.setPen(Qt.black)
 
+        # Column notation (A-H)
+        for col in range(8):
+            adjusted_col = 7 - col if self.parent.is_flipped else col
+            label = chr(ord('A') + adjusted_col)
+            
+            label_x = x_offset + col * square_size + (square_size // 2) - 6
+            
+            # Bottom label
+            label_y = y_offset + board_size + 20
+            qp.drawText(label_x, label_y, label)
+            
+            # Top label
+            label_y = y_offset - 10
+            qp.drawText(label_x, label_y, label)
+
+        # Row notation (1-8)
+        for row in range(8):
+            label = str(row + 1) if self.parent.is_flipped else str(8 - row)
+            label_y = y_offset + row * square_size + (square_size // 2) + 6
+            
+            # Left side
+            label_x = x_offset - 20
+            qp.drawText(label_x, label_y, label)
+            
+            # Right side
+            label_x = x_offset + board_size + 10
+            qp.drawText(label_x, label_y, label)
+
+    def update_board(self):
+        self.update()
 
 
 if __name__ == "__main__":
